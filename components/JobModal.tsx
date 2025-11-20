@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { JobApplication, JobStatus } from '../types';
-import { X, Sparkles, Loader2, ChevronDown, AlertCircle } from 'lucide-react';
+import { X, Sparkles, Loader2, ChevronDown, AlertCircle, ExternalLink } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 
 interface JobModalProps {
@@ -67,15 +67,15 @@ export const JobModal: React.FC<JobModalProps> = ({ isOpen, onClose, onSave, job
     setAiResponse(null);
 
     try {
-      // -------------------------------------------------------
-      // FIXED: ระบุ API Key โดยตรงเพื่อให้ใช้งานได้ทันที
-      // -------------------------------------------------------
-      const apiKey = "AIzaSyCB1QrxmY1wTBJn5IaGfsYVPrhCRkZy6m8";
+      // 1. Priority: API Key from Vercel Env
+      // 2. Fallback: Hardcoded Key (For Local/Backup)
+      const apiKey = process.env.API_KEY || "AIzaSyCB1QrxmY1wTBJn5IaGfsYVPrhCRkZy6m8"; 
       
       if (!apiKey) {
-        throw new Error("ไม่พบ API Key");
+        throw new Error("ไม่พบ API Key กรุณาตรวจสอบการตั้งค่า");
       }
 
+      // Initialize Google GenAI Client
       const ai = new GoogleGenAI({ apiKey });
       
       let prompt = `I am applying for the position of "${formData.position}" at "${formData.company}". `;
@@ -90,9 +90,10 @@ Answer in Thai.`;
         prompt += `I don't have the full job description yet. Please provide general advice for this role and 3 common interview questions for this position in Thai.`;
       }
 
-      // FIXED: ใช้โมเดล gemini-2.5-flash ตามมาตรฐานล่าสุด เพื่อแก้ปัญหา 404
+      // ใช้ gemini-1.5-flash ซึ่งเป็นรุ่นเสถียรที่สุด (v1beta/v1 compatible)
+      // หลีกเลี่ยงการใช้รุ่น experimental (2.0) ที่มักจะเกิด 404 บน Cloud
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         contents: prompt,
       });
 
@@ -102,13 +103,14 @@ Answer in Thai.`;
       
       let errorMessage = 'เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI';
       const errorStr = error.toString().toLowerCase();
+      const errorJson = JSON.stringify(error).toLowerCase();
 
-      if (errorStr.includes('404') || errorStr.includes('not_found')) {
-         errorMessage = 'ไม่พบ Model (404): ระบบกำลังปรับปรุง กรุณาลองใหม่ หรือตรวจสอบ API Key';
-      } else if (errorStr.includes('403') || errorStr.includes('api key')) {
-         errorMessage = 'API Key ไม่ถูกต้อง (403): ตรวจสอบ Key';
+      if (errorStr.includes('404') || errorJson.includes('not_found')) {
+         errorMessage = '404 Not Found: สาเหตุที่เป็นไปได้:\n1. API Key นี้ยังไม่ได้เปิดใช้งาน "Generative Language API" ใน Google Cloud Console\n2. โมเดล AI อาจไม่รองรับในโซน Server ของคุณ\nแนะนำ: ให้ลองสร้าง API Key ใหม่ หรือตรวจสอบการเปิด API';
+      } else if (errorStr.includes('403') || errorJson.includes('permission') || errorStr.includes('key')) {
+         errorMessage = '403 Permission Denied: สิทธิ์ถูกปฏิเสธ กรุณาตรวจสอบ "Website Restrictions" ของ API Key ใน Google Cloud Console';
       } else if (errorStr.includes('quota') || errorStr.includes('429')) {
-        errorMessage = 'ใช้งานเกินโควต้า: กรุณารอสักครู่แล้วลองใหม่';
+        errorMessage = '429 Too Many Requests: ใช้งานเกินโควต้า กรุณารอสักครู่แล้วลองใหม่';
       }
       
       setAiResponse(`⚠️ ${errorMessage}`);
@@ -281,6 +283,19 @@ Answer in Thai.`;
                       isError ? 'text-red-700' : 'text-slate-700'
                     }`}>
                       {aiResponse}
+                      {isError && (
+                        <div className="mt-3 pt-3 border-t border-red-200">
+                          <a 
+                            href="https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com" 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="flex items-center gap-1 text-xs font-bold text-red-600 hover:underline"
+                          >
+                            <ExternalLink size={12} />
+                            คลิกที่นี่เพื่อเปิดใช้งาน API (Enable API) ใน Google Cloud
+                          </a>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
