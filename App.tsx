@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { JobApplication, JobStatus } from './types';
+import { JobApplication, JobStatus, INITIAL_JOBS } from './types';
 import { StatsCards } from './components/StatsCards';
 import { JobModal } from './components/JobModal';
-import { Plus, Search, Filter, Banknote, Calendar, Edit3, Trash2, ExternalLink, ChevronDown, FileText, CloudOff, Wifi } from 'lucide-react';
+import { Plus, Search, Filter, Banknote, Calendar, Edit3, Trash2, ExternalLink, ChevronDown, FileText, CloudOff, Wifi, DatabaseBackup } from 'lucide-react';
 import { db } from './firebase';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy, writeBatch } from 'firebase/firestore';
 
 const App: React.FC = () => {
   const [jobs, setJobs] = useState<JobApplication[]>([]);
@@ -92,6 +92,50 @@ const App: React.FC = () => {
     } catch (error) {
       console.error("Error saving job:", error);
       alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
+    }
+  };
+
+  const restoreData = async () => {
+    if (!window.confirm("คุณต้องการนำเข้าข้อมูลเก่า/ข้อมูลตัวอย่าง ใช่หรือไม่?")) return;
+    
+    setLoading(true);
+    try {
+        const batch = writeBatch(db);
+        
+        // 1. ลองหาข้อมูลใน Local Storage ก่อน
+        const localDataStr = localStorage.getItem('job_applications');
+        let dataToRestore: JobApplication[] = [];
+
+        if (localDataStr) {
+            try {
+                dataToRestore = JSON.parse(localDataStr);
+                console.log("Found local data:", dataToRestore);
+            } catch (e) {
+                console.error("Error parsing local data", e);
+            }
+        }
+
+        // 2. ถ้าไม่มีใน Local Storage ให้ใช้ข้อมูลตัวอย่าง (INITIAL_JOBS)
+        if (dataToRestore.length === 0) {
+            dataToRestore = INITIAL_JOBS;
+            console.log("Using initial data");
+        }
+
+        // 3. เพิ่มข้อมูลลง Firestore
+        dataToRestore.forEach((job) => {
+            // สร้าง Reference ใหม่ (ให้ Firestore สร้าง ID ใหม่ให้เลย เพื่อป้องกัน ID ซ้ำ)
+            const docRef = doc(collection(db, 'jobs')); 
+            const { id, ...jobData } = job; // ตัด ID เดิมออก
+            batch.set(docRef, jobData);
+        });
+
+        await batch.commit();
+        alert(`กู้คืนข้อมูลสำเร็จจำนวน ${dataToRestore.length} รายการ`);
+    } catch (error) {
+        console.error("Error restoring data:", error);
+        alert("เกิดข้อผิดพลาดในการกู้คืนข้อมูล: " + error);
+    } finally {
+        setLoading(false);
     }
   };
 
@@ -191,9 +235,21 @@ const App: React.FC = () => {
                   {filteredJobs.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                        {jobs.length === 0 
-                          ? "ยังไม่มีข้อมูลการสมัครงาน เริ่มต้นด้วยการกด 'เพิ่มงานใหม่'"
-                          : "ไม่พบข้อมูลที่ค้นหา"}
+                        <div className="flex flex-col items-center gap-4">
+                            <p>{jobs.length === 0 
+                              ? "ยังไม่มีข้อมูลการสมัครงานใน Cloud"
+                              : "ไม่พบข้อมูลที่ค้นหา"}</p>
+                            
+                            {jobs.length === 0 && (
+                                <button 
+                                    onClick={restoreData}
+                                    className="flex items-center gap-2 text-sm bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg hover:bg-slate-50 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm"
+                                >
+                                    <DatabaseBackup size={16} />
+                                    กู้คืนข้อมูลเก่า / ใช้ข้อมูลตัวอย่าง
+                                </button>
+                            )}
+                        </div>
                       </td>
                     </tr>
                   ) : (
