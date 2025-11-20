@@ -85,15 +85,14 @@ export const JobModal: React.FC<JobModalProps> = ({ isOpen, onClose, onSave, job
 1. A summary of the key 3 skills required.
 2. 3 potential interview questions specific to this role.
 3. A short advice on how to stand out for this application.
-Answer in Thai.`;
+Answer in Thai language using natural and professional tone.`;
       } else {
         prompt += `I don't have the full job description yet. Please provide general advice for this role and 3 common interview questions for this position in Thai.`;
       }
 
-      // ใช้ gemini-1.5-flash ซึ่งเป็นรุ่นเสถียรที่สุด (v1beta/v1 compatible)
-      // หลีกเลี่ยงการใช้รุ่น experimental (2.0) ที่มักจะเกิด 404 บน Cloud
+      // ใช้ gemini-2.5-flash ซึ่งเป็นรุ่นใหม่ล่าสุดและฉลาดกว่า (หลังจากที่เปิด API แล้วควรใช้ตัวนี้)
       const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt,
       });
 
@@ -106,7 +105,7 @@ Answer in Thai.`;
       const errorJson = JSON.stringify(error).toLowerCase();
 
       if (errorStr.includes('404') || errorJson.includes('not_found')) {
-         errorMessage = '404 Not Found: สาเหตุที่เป็นไปได้:\n1. API Key นี้ยังไม่ได้เปิดใช้งาน "Generative Language API" ใน Google Cloud Console\n2. โมเดล AI อาจไม่รองรับในโซน Server ของคุณ\nแนะนำ: ให้ลองสร้าง API Key ใหม่ หรือตรวจสอบการเปิด API';
+         errorMessage = '404 Not Found: สาเหตุที่เป็นไปได้:\n1. API Key นี้ยังไม่ได้เปิดใช้งาน "Generative Language API" ใน Google Cloud Console (คุณอาจต้องรอ 1-2 นาทีหลังจากเปิด)\n2. โมเดล AI อาจไม่รองรับในโซน Server ของคุณ';
       } else if (errorStr.includes('403') || errorJson.includes('permission') || errorStr.includes('key')) {
          errorMessage = '403 Permission Denied: สิทธิ์ถูกปฏิเสธ กรุณาตรวจสอบ "Website Restrictions" ของ API Key ใน Google Cloud Console';
       } else if (errorStr.includes('quota') || errorStr.includes('429')) {
