@@ -1,23 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { JobApplication, JobStatus, INITIAL_JOBS } from './types';
+import { JobApplication, JobStatus } from './types';
 import { StatsCards } from './components/StatsCards';
 import { JobModal } from './components/JobModal';
-import { Plus, Search, Filter, MapPin, Building2, Banknote, Calendar, Edit3, Trash2, ExternalLink, ChevronDown, FileText } from 'lucide-react';
+import { Plus, Search, Filter, Banknote, Calendar, Edit3, Trash2, ExternalLink, ChevronDown, FileText, CloudOff, Wifi } from 'lucide-react';
+import { db } from './firebase';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
 
 const App: React.FC = () => {
-  // Initialize state from localStorage if available, otherwise use INITIAL_JOBS
-  const [jobs, setJobs] = useState<JobApplication[]>(() => {
-    try {
-      const savedJobs = localStorage.getItem('jobTrackerData');
-      if (savedJobs) {
-        return JSON.parse(savedJobs);
-      }
-    } catch (error) {
-      console.error('Error reading from localStorage:', error);
-    }
-    return INITIAL_JOBS;
-  });
-
+  const [jobs, setJobs] = useState<JobApplication[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -26,14 +17,27 @@ const App: React.FC = () => {
   // State for delete confirmation modal
   const [jobToDelete, setJobToDelete] = useState<string | null>(null);
 
-  // Save to localStorage whenever jobs state changes
+  // Real-time Sync with Firebase
   useEffect(() => {
-    try {
-      localStorage.setItem('jobTrackerData', JSON.stringify(jobs));
-    } catch (error) {
-      console.error('Error saving to localStorage:', error);
-    }
-  }, [jobs]);
+    const q = query(collection(db, 'jobs'), orderBy('dateUpdated', 'desc'));
+    
+    // onSnapshot คือหัวใจสำคัญ มันจะทำงานทุกครั้งที่มีข้อมูลเปลี่ยนใน Database
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const jobsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as JobApplication[];
+      
+      setJobs(jobsData);
+      setLoading(false);
+    }, (error) => {
+      console.error("Error fetching documents: ", error);
+      setLoading(false);
+    });
+
+    // Cleanup listener when component unmounts
+    return () => unsubscribe();
+  }, []);
 
   const filteredJobs = useMemo(() => {
     return jobs.filter(job => {
@@ -61,18 +65,33 @@ const App: React.FC = () => {
     setJobToDelete(id);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (jobToDelete) {
-      setJobs(prev => prev.filter(j => j.id !== jobToDelete));
-      setJobToDelete(null);
+      try {
+        await deleteDoc(doc(db, 'jobs', jobToDelete));
+        setJobToDelete(null);
+      } catch (error) {
+        console.error("Error deleting job:", error);
+        alert("เกิดข้อผิดพลาดในการลบข้อมูล");
+      }
     }
   };
 
-  const handleSaveJob = (savedJob: JobApplication) => {
-    if (editingJob) {
-      setJobs(prev => prev.map(j => j.id === savedJob.id ? savedJob : j));
-    } else {
-      setJobs(prev => [savedJob, ...prev]);
+  const handleSaveJob = async (jobData: JobApplication) => {
+    try {
+      if (editingJob) {
+        // Update existing job
+        const jobRef = doc(db, 'jobs', jobData.id);
+        const { id, ...dataToUpdate } = jobData; // แยก id ออกจากข้อมูลที่จะบันทึก
+        await updateDoc(jobRef, dataToUpdate);
+      } else {
+        // Add new job
+        const { id, ...dataToSave } = jobData; // id จะถูกสร้างโดย Firebase เอง
+        await addDoc(collection(db, 'jobs'), dataToSave);
+      }
+    } catch (error) {
+      console.error("Error saving job:", error);
+      alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
     }
   };
 
@@ -95,10 +114,16 @@ const App: React.FC = () => {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-              JobTracker <span className="text-blue-600">Pro</span>
-            </h1>
-            <p className="text-slate-500 mt-1 text-sm">จัดการและติดตามการสมัครงานของคุณได้ง่ายๆ</p>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+                JobTracker <span className="text-blue-600">Pro</span>
+              </h1>
+              <div className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                <Wifi size={12} />
+                <span>Online</span>
+              </div>
+            </div>
+            <p className="text-slate-500 mt-1 text-sm">ข้อมูลเชื่อมต่อกับ Cloud Database (Sync ทุกอุปกรณ์)</p>
           </div>
           <button
             onClick={handleAddJob}
@@ -141,95 +166,105 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Job Table (Desktop) & Cards (Mobile) */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50/80 border-b border-slate-100">
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">บริษัท / ตำแหน่ง</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">เงินเดือน</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">สถานะ</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">วันที่สมัคร</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">ช่องทาง</th>
-                   <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">จัดการ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredJobs.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                      ไม่พบข้อมูลการสมัครงาน
-                    </td>
+        {/* Loading State */}
+        {loading ? (
+          <div className="bg-white rounded-xl p-12 text-center border border-slate-100">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-slate-500">กำลังโหลดข้อมูลจาก Cloud...</p>
+          </div>
+        ) : (
+          /* Job Table (Desktop) & Cards (Mobile) */
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/80 border-b border-slate-100">
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">บริษัท / ตำแหน่ง</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">เงินเดือน</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">สถานะ</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">วันที่สมัคร</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">ช่องทาง</th>
+                     <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">จัดการ</th>
                   </tr>
-                ) : (
-                  filteredJobs.map((job) => (
-                    <tr key={job.id} className="hover:bg-slate-50/50 transition-colors group">
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-slate-800 text-sm sm:text-base">{job.company}</span>
-                          <span className="text-sm text-slate-500 font-medium">{job.position}</span>
-                          {job.jobDescription && (
-                            <span className="flex items-center gap-1 text-xs text-indigo-500 mt-1">
-                               <FileText size={10} /> มี JD
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-1.5 text-sm text-slate-600 bg-slate-100/50 px-2 py-1 rounded-md w-fit">
-                          <Banknote size={14} className="text-slate-400" />
-                          {job.salary}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusColor(job.status)}`}>
-                          {job.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2 text-sm text-slate-500">
-                           <Calendar size={14} />
-                           {new Date(job.dateApplied).toLocaleDateString('th-TH', { year: '2-digit', month: 'short', day: 'numeric' })}
-                        </div>
-                      </td>
-                       <td className="px-6 py-4 text-sm text-slate-600">
-                        <span className="inline-flex items-center gap-1">
-                           <ExternalLink size={12} className="text-slate-400"/>
-                           {job.channel}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleEditJob(job)}
-                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="แก้ไข"
-                          >
-                            <Edit3 size={16} className="pointer-events-none" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => handleDeleteClick(job.id, e)}
-                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="ลบ"
-                          >
-                            <Trash2 size={16} className="pointer-events-none" />
-                          </button>
-                        </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredJobs.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                        {jobs.length === 0 
+                          ? "ยังไม่มีข้อมูลการสมัครงาน เริ่มต้นด้วยการกด 'เพิ่มงานใหม่'"
+                          : "ไม่พบข้อมูลที่ค้นหา"}
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    filteredJobs.map((job) => (
+                      <tr key={job.id} className="hover:bg-slate-50/50 transition-colors group">
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-slate-800 text-sm sm:text-base">{job.company}</span>
+                            <span className="text-sm text-slate-500 font-medium">{job.position}</span>
+                            {job.jobDescription && (
+                              <span className="flex items-center gap-1 text-xs text-indigo-500 mt-1">
+                                 <FileText size={10} /> มี JD
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-1.5 text-sm text-slate-600 bg-slate-100/50 px-2 py-1 rounded-md w-fit">
+                            <Banknote size={14} className="text-slate-400" />
+                            {job.salary}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${getStatusColor(job.status)}`}>
+                            {job.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2 text-sm text-slate-500">
+                             <Calendar size={14} />
+                             {new Date(job.dateApplied).toLocaleDateString('th-TH', { year: '2-digit', month: 'short', day: 'numeric' })}
+                          </div>
+                        </td>
+                         <td className="px-6 py-4 text-sm text-slate-600">
+                          <span className="inline-flex items-center gap-1">
+                             <ExternalLink size={12} className="text-slate-400"/>
+                             {job.channel}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleEditJob(job)}
+                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="แก้ไข"
+                            >
+                              <Edit3 size={16} className="pointer-events-none" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteClick(job.id, e)}
+                              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="ลบ"
+                            >
+                              <Trash2 size={16} className="pointer-events-none" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )}
         
         {/* Footer Info */}
         <div className="mt-6 text-center text-xs text-slate-400">
-          Showing {filteredJobs.length} applications
+          Showing {filteredJobs.length} applications • Synced with Cloud
         </div>
       </div>
 
