@@ -67,8 +67,10 @@ export const JobModal: React.FC<JobModalProps> = ({ isOpen, onClose, onSave, job
     setAiResponse(null);
 
     try {
-      // ใช้ process.env.API_KEY โดยตรงสำหรับการใช้งานทั่วไป
-      const apiKey = process.env.API_KEY;
+      // -------------------------------------------------------
+      // FIXED: ระบุ API Key โดยตรงเพื่อให้ใช้งานได้ทันที
+      // -------------------------------------------------------
+      const apiKey = "AIzaSyCB1QrxmY1wTBJn5IaGfsYVPrhCRkZy6m8";
       
       if (!apiKey) {
         throw new Error("ไม่พบ API Key");
@@ -88,9 +90,9 @@ Answer in Thai.`;
         prompt += `I don't have the full job description yet. Please provide general advice for this role and 3 common interview questions for this position in Thai.`;
       }
 
-      // ใช้โมเดล gemini-2.5-flash ตามมาตรฐานล่าสุด
+      // FIXED: ใช้โมเดล gemini-1.5-flash ที่เสถียรที่สุดสำหรับทุกโซน
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         contents: prompt,
       });
 
@@ -99,14 +101,14 @@ Answer in Thai.`;
       console.error('Error calling Gemini:', error);
       
       let errorMessage = 'เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI';
-      const errorStr = error.toString();
+      const errorStr = error.toString().toLowerCase();
 
       if (errorStr.includes('404')) {
-         errorMessage = 'ไม่พบ Model (404): กรุณาลองใหม่อีกครั้ง';
-      } else if (errorStr.includes('403') || errorStr.includes('API key')) {
-         errorMessage = 'API Key ไม่ถูกต้อง (403): ตรวจสอบการตั้งค่า Key';
+         errorMessage = 'ไม่พบ Model (404): ระบบกำลังปรับปรุง กรุณาลองใหม่';
+      } else if (errorStr.includes('403') || errorStr.includes('api key')) {
+         errorMessage = 'API Key ไม่ถูกต้อง (403): ตรวจสอบ Key';
       } else if (errorStr.includes('quota') || errorStr.includes('429')) {
-        errorMessage = 'ใช้งานเกินโควต้า (Quota Exceeded): กรุณารอสักครู่แล้วลองใหม่';
+        errorMessage = 'ใช้งานเกินโควต้า: กรุณารอสักครู่แล้วลองใหม่';
       }
       
       setAiResponse(`⚠️ ${errorMessage}`);
