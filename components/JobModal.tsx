@@ -90,9 +90,9 @@ Answer in Thai.`;
         prompt += `I don't have the full job description yet. Please provide general advice for this role and 3 common interview questions for this position in Thai.`;
       }
 
-      // FIXED: ใช้โมเดล gemini-1.5-flash ที่เสถียรที่สุดสำหรับทุกโซน
+      // FIXED: ใช้โมเดล gemini-2.5-flash ตามมาตรฐานล่าสุด เพื่อแก้ปัญหา 404
       const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt,
       });
 
@@ -103,8 +103,8 @@ Answer in Thai.`;
       let errorMessage = 'เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI';
       const errorStr = error.toString().toLowerCase();
 
-      if (errorStr.includes('404')) {
-         errorMessage = 'ไม่พบ Model (404): ระบบกำลังปรับปรุง กรุณาลองใหม่';
+      if (errorStr.includes('404') || errorStr.includes('not_found')) {
+         errorMessage = 'ไม่พบ Model (404): ระบบกำลังปรับปรุง กรุณาลองใหม่ หรือตรวจสอบ API Key';
       } else if (errorStr.includes('403') || errorStr.includes('api key')) {
          errorMessage = 'API Key ไม่ถูกต้อง (403): ตรวจสอบ Key';
       } else if (errorStr.includes('quota') || errorStr.includes('429')) {
