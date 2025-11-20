@@ -1,11 +1,23 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { JobApplication, JobStatus, INITIAL_JOBS } from './types';
 import { StatsCards } from './components/StatsCards';
 import { JobModal } from './components/JobModal';
 import { Plus, Search, Filter, MapPin, Building2, Banknote, Calendar, Edit3, Trash2, ExternalLink, ChevronDown, FileText } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [jobs, setJobs] = useState<JobApplication[]>(INITIAL_JOBS);
+  // Initialize state from localStorage if available, otherwise use INITIAL_JOBS
+  const [jobs, setJobs] = useState<JobApplication[]>(() => {
+    try {
+      const savedJobs = localStorage.getItem('jobTrackerData');
+      if (savedJobs) {
+        return JSON.parse(savedJobs);
+      }
+    } catch (error) {
+      console.error('Error reading from localStorage:', error);
+    }
+    return INITIAL_JOBS;
+  });
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -13,6 +25,15 @@ const App: React.FC = () => {
   
   // State for delete confirmation modal
   const [jobToDelete, setJobToDelete] = useState<string | null>(null);
+
+  // Save to localStorage whenever jobs state changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('jobTrackerData', JSON.stringify(jobs));
+    } catch (error) {
+      console.error('Error saving to localStorage:', error);
+    }
+  }, [jobs]);
 
   const filteredJobs = useMemo(() => {
     return jobs.filter(job => {
